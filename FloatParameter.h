@@ -1,0 +1,61 @@
+#pragma once
+
+#include <variant>
+#include <string>
+#include <cassert>
+#include <iostream>
+#include <vector>
+
+#include <boost/serialization/access.hpp>
+#include <boost/serialization/map.hpp>
+
+struct RefFMatrix {
+	friend class boost::serialization::access;
+	const std::vector<std::vector<float>>& m_matrix;
+
+	template<class Archive>
+	void serialize(Archive& ar, const unsigned int version)
+	{
+		ar& m_matrix;
+	}
+};
+
+class FloatParameter
+{
+	friend class boost::serialization::access;
+
+	template<class Archive>
+	void serialize(Archive& ar, const unsigned int version)
+	{
+		ar& m_singleData;
+		ar& m_vectorData;
+		ar& m_pointerVectorData;
+		ar& m_pointerMatrixData;
+		ar& m_intData;
+	}
+
+private:
+	float m_singleData;
+	std::vector<float> m_vectorData;
+
+	const std::vector<float>* m_pointerVectorData;
+	const std::vector<std::vector<float>>* m_pointerMatrixData;
+
+	int m_intData;
+public:
+	FloatParameter();
+	FloatParameter(const std::vector<float>* pointerVectorData);
+	FloatParameter(const std::vector<std::vector<float>>* pointerMatrixData);
+	FloatParameter(float data);
+	FloatParameter(const std::vector<float> &data);
+	FloatParameter(int data);
+
+	float GeFloatData() const;
+	std::vector<float> GetFVectorData() const;
+	const std::vector<float>* GetPointerFVectorData() const;
+	const std::vector<std::vector<float>>* GetPointerFMatrixData() const;
+	int GetIntData() const;
+
+	void print() const;
+};
+
