@@ -27,7 +27,7 @@ using namespace std::chrono_literals;
 
 //#define DEBUG
 
-#define COUNT_THREADS 1
+#define COUNT_THREADS 4
 
 template<typename Type>
 class TaskManagerForThreads

@@ -38,22 +38,22 @@ private:
 	float m_singleData;
 	std::vector<float> m_vectorData;
 
-	const std::vector<float>* m_pointerVectorData;
-	const std::vector<std::vector<float>>* m_pointerMatrixData;
+	std::vector<float>* m_pointerVectorData;
+	std::vector<std::vector<float>>* m_pointerMatrixData;
 
 	int m_intData;
 public:
 	FloatParameter();
-	FloatParameter(const std::vector<float>* pointerVectorData);
-	FloatParameter(const std::vector<std::vector<float>>* pointerMatrixData);
+	FloatParameter(std::vector<float>* pointerVectorData);
+	FloatParameter(std::vector<std::vector<float>>* pointerMatrixData);
 	FloatParameter(float data);
 	FloatParameter(const std::vector<float> &data);
 	FloatParameter(int data);
 
 	float GeFloatData() const;
 	std::vector<float> GetFVectorData() const;
-	const std::vector<float>* GetPointerFVectorData() const;
-	const std::vector<std::vector<float>>* GetPointerFMatrixData() const;
+	std::vector<float>* GetPointerFVectorData() const;
+	std::vector<std::vector<float>>* GetPointerFMatrixData() const;
 	int GetIntData() const;
 
 	void print() const;

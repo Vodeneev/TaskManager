@@ -5,12 +5,12 @@ FloatParameter::FloatParameter()
 
 }
 
-FloatParameter::FloatParameter(const std::vector<float>* pointerVectorData)
+FloatParameter::FloatParameter(std::vector<float>* pointerVectorData)
 {
 	m_pointerVectorData = pointerVectorData;
 }
 
-FloatParameter::FloatParameter(const std::vector<std::vector<float>>* pointerMatrixData)
+FloatParameter::FloatParameter(std::vector<std::vector<float>>* pointerMatrixData)
 {
 	m_pointerMatrixData = pointerMatrixData;
 }
@@ -40,12 +40,12 @@ std::vector<float> FloatParameter::GetFVectorData() const
 	return m_vectorData;
 }
 
-const std::vector<float>* FloatParameter::GetPointerFVectorData() const
+std::vector<float>* FloatParameter::GetPointerFVectorData() const
 {
 	return m_pointerVectorData;
 }
 
-const std::vector<std::vector<float>>* FloatParameter::GetPointerFMatrixData() const
+std::vector<std::vector<float>>* FloatParameter::GetPointerFMatrixData() const
 {
 	return m_pointerMatrixData;
 }

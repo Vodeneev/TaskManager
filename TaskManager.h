@@ -17,14 +17,15 @@ public:
         m_tasks = tasks;
     }
 
-	void Run()
+	void Run(int rank)
 	{
-        boost::mpi::environment env;
         boost::mpi::communicator world;
+        boost::mpi::environment env;
 
         int delta = m_tasks.size() / (world.size() - 1 == 0 ? 1 : world.size() - 1);
-        if (world.rank() == 0)
+        if (rank == 0)
         {
+            std::cout << "world size: " << world.size() << " tasks size: " << m_tasks.size() << " delta: " << delta << std::endl;
             int worldSize = world.size();
 
             std::vector<int> taskForProcess;
@@ -106,7 +107,7 @@ public:
         }
         else
         {
-            if (world.rank() <= m_tasks.size())
+            if (rank <= m_tasks.size())
             {
                 std::vector<int> tasksIndexes;
                 world.recv(0, 0, tasksIndexes);
