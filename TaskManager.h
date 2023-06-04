@@ -25,84 +25,105 @@ public:
         int delta = m_tasks.size() / (world.size() - 1 == 0 ? 1 : world.size() - 1);
         if (rank == 0)
         {
-            std::cout << "world size: " << world.size() << " tasks size: " << m_tasks.size() << " delta: " << delta << std::endl;
-            int worldSize = world.size();
-
-            std::vector<int> taskForProcess;
-            if (delta > 0)
+            if (world.size() > 1)
             {
-                for (int i = 0; i < worldSize - 1; ++i)
+                std::cout << "world size: " << world.size() << " tasks size: " << m_tasks.size() << " delta: " << delta << std::endl;
+                int worldSize = world.size();
+
+                std::vector<int> taskForProcess;
+                if (delta > 0)
                 {
-                    for (int j = 0; i + j * (worldSize - 1) < m_tasks.size(); ++j)
+                    for (int i = 0; i < worldSize - 1; ++i)
                     {
-                        taskForProcess.push_back(i + j * (worldSize - 1));
+                        for (int j = 0; i + j * (worldSize - 1) < m_tasks.size(); ++j)
+                        {
+                            taskForProcess.push_back(i + j * (worldSize - 1));
+                        }
+
+                        world.send(i + 1, 0, taskForProcess);
+                        taskForProcess.clear();
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < m_tasks.size(); ++i)
+                    {
+                        taskForProcess.push_back(i);
+                        world.send(i + 1, 0, taskForProcess);
+                        taskForProcess.clear();
+                    }
+                }
+
+                std::vector<std::pair<int, bool>> processesId;
+                for (size_t i = 0; i < worldSize - 1; ++i)
+                {
+                    processesId.push_back(std::make_pair(i + 1, false));
+                }
+
+                int countProcessesDone = 0;
+                std::vector<std::pair<std::string, Type>> newParameters;
+                while (countProcessesDone != (worldSize - 1))
+                {
+                    for (size_t i = 0; i < processesId.size(); ++i)
+                    {
+                        if (!processesId[i].second)
+                        {
+                            std::vector<std::pair<std::string, Type>> newParametersFromProcess;
+
+                            world.recv(processesId[i].first, 0, processesId[i].second);
+
+                            world.recv(processesId[i].first, 0, newParametersFromProcess);
+
+                            if (processesId[i].second)
+                            {
+                                ++countProcessesDone;
+                            }
+
+                            if (newParametersFromProcess.size() > 0)
+                            {
+                                for (size_t j = 0; j < newParametersFromProcess.size(); ++j)
+                                {
+                                    newParameters.push_back(newParametersFromProcess[j]);
+
+                                    if (newParametersFromProcess[j].first == "result")
+                                    {
+                                        m_result = newParametersFromProcess[j].second;
+                                    }
+                                }
+                            }
+
+                            newParametersFromProcess.clear();
+                        }
                     }
 
-                    world.send(i + 1, 0, taskForProcess);
-                    taskForProcess.clear();
+                    for (size_t i = 0; i < processesId.size(); ++i)
+                    {
+                        if (!processesId[i].second)
+                        {
+                            world.send(processesId[i].first, 0, newParameters);
+                        }
+                    }
+
+                    newParameters.clear();
                 }
             }
             else
             {
-                for (int i = 0; i < m_tasks.size(); ++i)
+                std::map<std::string, Type> mapParameters;
+                for (size_t i = 0; i < m_inputParameters.size(); ++i)
                 {
-                    taskForProcess.push_back(i);
-                    world.send(i + 1, 0, taskForProcess);
-                    taskForProcess.clear();
+                    mapParameters.insert(std::make_pair(m_inputParameters[i].first, m_inputParameters[i].second));
                 }
-            }
-
-            std::vector<std::pair<int, bool>> processesId;
-            for (size_t i = 0; i < worldSize - 1; ++i)
-            {
-                processesId.push_back(std::make_pair(i + 1, false));
-            }
-
-            int countProcessesDone = 0;
-            std::vector<std::pair<std::string, Type>> newParameters;
-            while (countProcessesDone != (worldSize - 1))
-            {
-                for (size_t i = 0; i < processesId.size(); ++i)
+                TaskManagerForThreads<Type> taskManager(mapParameters, m_tasks);
+                taskManager.Run();
+                std::vector<std::pair<std::string, Type>> newParameters = taskManager.GetNewParameters();
+                for (size_t i = 0; i < newParameters.size(); ++i)
                 {
-                    if (!processesId[i].second)
+                    if (newParameters[i].first == "result")
                     {
-                        std::vector<std::pair<std::string, Type>> newParametersFromProcess;
-
-                        world.recv(processesId[i].first, 0, processesId[i].second);
-
-                        world.recv(processesId[i].first, 0, newParametersFromProcess);
-
-                        if (processesId[i].second)
-                        {
-                            ++countProcessesDone;
-                        }
-
-                        if (newParametersFromProcess.size() > 0)
-                        {
-                            for (size_t j = 0; j < newParametersFromProcess.size(); ++j)
-                            {
-                                newParameters.push_back(newParametersFromProcess[j]);
-
-                                if (newParametersFromProcess[j].first == "result")
-                                {
-                                    m_result = newParametersFromProcess[j].second;
-                                }
-                            }
-                        }
-
-                        newParametersFromProcess.clear();
+                        m_result = newParameters[i].second;
                     }
                 }
-
-                for (size_t i = 0; i < processesId.size(); ++i)
-                {
-                    if (!processesId[i].second)
-                    {
-                        world.send(processesId[i].first, 0, newParameters);
-                    }
-                }
-
-                newParameters.clear();
             }
         }
         else

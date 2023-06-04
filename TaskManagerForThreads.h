@@ -25,9 +25,9 @@
 
 using namespace std::chrono_literals;
 
-//#define DEBUG
+//#define DEBUG_LOG
 
-#define COUNT_THREADS 4
+#define COUNT_THREADS 1
 
 template<typename Type>
 class TaskManagerForThreads
@@ -118,6 +118,7 @@ public:
 		for (auto parameter : parameters)
 		{
 			m_inputParameters.insert(parameter);
+			std::cout << "parameter name: " << parameter.first << std::endl;
 			m_newParameters.push_back(parameter);
 		}
 	}
@@ -201,9 +202,9 @@ private:
 
 	void ThreadSafeLog(const std::string& out)
 	{
-#ifdef DEBUG
+#ifdef DEBUG_LOG
 		std::unique_lock<std::mutex> lck(m_mutexForLog);
 		std::cout << out << std::this_thread::get_id() << std::endl;
-#endif // DEBUG
+#endif // DEBUG_LOG
 	}
 };

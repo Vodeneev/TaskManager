@@ -7,6 +7,11 @@
 
 #include "TaskManager.h"
 #include "FloatParameter.h"
+#include "OpenCV_Parameter.h"
+
+//#define MATRIX_MULT_VECTOR
+
+#define OPENCV_TASK
 
 #define M 16000
 #define N 80000
@@ -174,99 +179,373 @@ std::map<std::string, FloatParameter> CollectValuesIntoVector(
     return output_parameters;
 }
 
+void processing_image(std::string input_dir, std::string output_dir, int index)
+{
+    // формирование имени файла
+    std::string filename = input_dir + '(' + std::to_string(index) + ')' + ".jpg";
+
+    // загрузка изображения
+    cv::Mat image = cv::imread(filename, cv::IMREAD_COLOR);
+    if (image.empty())
+    {
+        std::cout << "Could not open or find the image: " << filename << std::endl;
+    }
+
+    // преобразование в оттенки серого
+    cv::Mat gray_image;
+    cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
+
+    // размытие изображения
+    cv::Mat blurred_image;
+    blur(gray_image, blurred_image, cv::Size(6, 6));
+
+    // формирование имени файла для сохранения
+    std::string output_filename = output_dir + std::to_string(index) + ".jpg";
+
+    // сохранение обработанного изображения
+    imwrite(output_filename, blurred_image);
+}
+
+std::map<std::string, OpenCV_Parameter> loadImages(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    int imagesBlockSize = (input_parameters.at("images_block_size")).GetIntData();
+
+    int startIndex = imagesBlockSize * id;
+
+    std::string input_dir = (input_parameters.at("input_dir")).GetStringData();
+    std::vector<cv::Mat> images;
+
+    int vectorIndex = 0;
+    for (int i = startIndex; i < startIndex + imagesBlockSize; ++i)
+    {
+        std::string filename = input_dir + '(' + std::to_string(i) + ')' + ".jpg";
+        images.push_back(cv::imread(filename, cv::IMREAD_COLOR));
+        ++vectorIndex;
+    }
+
+    OpenCV_Parameter parameter(images);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("images_" + std::to_string(id), parameter));
+    std::vector<cv::Mat> new_images3 = (output_parameters.at("images_" + std::to_string(id))).GetVectorMatData();
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> toGrayColor(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    std::vector<cv::Mat> images = std::move((input_parameters.at("images_" + std::to_string(id))).GetVectorMatData());
+
+    std::vector<cv::Mat> gray_images(images.size());
+
+    for (size_t i = 0; i < images.size(); ++i)
+    {
+        if (images[i].empty())
+        {
+            std::cout << "toGrayColor image is empty. id: " << id << " index: " << std::endl;
+            break;
+        }
+        cvtColor(images[i], gray_images[i], cv::COLOR_BGR2GRAY);
+    }
+
+    OpenCV_Parameter parameter(gray_images);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("gray_images_" + std::to_string(id), parameter));
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> toBlur(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    std::vector<cv::Mat> gray_images = std::move((input_parameters.at("gray_images_" + std::to_string(id))).GetVectorMatData());
+
+    std::vector<cv::Mat> blur_images(gray_images.size());
+
+    for (size_t i = 0; i < gray_images.size(); ++i)
+    {
+        blur(gray_images[i], blur_images[i], cv::Size(6, 6));
+    }
+
+    OpenCV_Parameter parameter(blur_images);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("blur_images_" + std::to_string(id), parameter));
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> saveImages(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    std::vector<cv::Mat> blur_images = std::move((input_parameters.at("blur_images_" + std::to_string(id))).GetVectorMatData());
+
+    int startIndex = blur_images.size() * id;
+
+    std::string output_dir = (input_parameters.at("output_dir")).GetStringData();
+    std::vector<cv::Mat> res_images(blur_images.size());
+
+    int vectorIndex = 0;
+    for (int i = startIndex; i < startIndex + blur_images.size(); ++i)
+    {
+        std::string filename = output_dir + std::to_string(i) + ".jpg";
+        cv::imwrite(filename, blur_images[vectorIndex]);
+        ++vectorIndex;
+    }
+
+    OpenCV_Parameter parameter(true);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("res_" + std::to_string(id), parameter));
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> checkingExecution(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    OpenCV_Parameter parameter(true);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("result", parameter));
+    return output_parameters;
+}
+
+namespace boost {
+    namespace serialization {
+
+        template<class Archive>
+        void save(Archive& ar, const cv::Mat& mat, const unsigned int version)
+        {
+            // Сохраняем размер матрицы
+            int rows = mat.rows;
+            int cols = mat.cols;
+            int type = mat.type();
+            ar& BOOST_SERIALIZATION_NVP(rows);
+            ar& BOOST_SERIALIZATION_NVP(cols);
+            ar& BOOST_SERIALIZATION_NVP(type);
+
+            // Сохраняем данные матрицы
+            int size = rows * cols * mat.elemSize();
+            const char* data = reinterpret_cast<const char*>(mat.data);
+            ar& boost::serialization::make_array(data, size);
+        }
+
+        template<class Archive>
+        void load(Archive& ar, cv::Mat& mat, const unsigned int version)
+        {
+            // Загружаем размер матрицы
+            int rows, cols, type;
+            ar& BOOST_SERIALIZATION_NVP(rows);
+            ar& BOOST_SERIALIZATION_NVP(cols);
+            ar& BOOST_SERIALIZATION_NVP(type);
+
+            // Создаем матрицу
+            mat.create(rows, cols, type);
+
+            // Загружаем данные матрицы
+            int size = rows * cols * mat.elemSize();
+            char* data = reinterpret_cast<char*>(mat.data);
+            ar& boost::serialization::make_array(data, size);
+        }
+
+        template<class Archive>
+        void serialize(Archive& ar, cv::Mat& mat, const unsigned int version)
+        {
+            boost::serialization::split_free(ar, mat, version);
+        }
+
+    } // namespace serialization
+} // namespace boost
+
 int main(int argc, char* argv[])
 {
+
+#ifdef OPENCV_TASK
+
+    double start;
+    double end;
+
+    int num_images = 1000; // количество изображений
+    std::string input_dir = "input_images/"; // директория с исходными изображениями
+    std::string output_dir = "output_images/"; // директория для сохранения обработанных изображений
+
+    start = omp_get_wtime();
+    // загрузка и обработка изображений
+    for (int i = 1; i <= num_images; i++)
+    {
+        processing_image(input_dir, output_dir, i);
+    }
+    end = omp_get_wtime();
+    double simpleSeconds = end - start;
+
+    start = omp_get_wtime();
+    // загрузка и обработка изображений
+#pragma omp parallel for
+    for (int i = 1; i <= num_images; i++)
+    {
+        processing_image(input_dir, output_dir, i);
+    }
+    end = omp_get_wtime();
+    double ompSeconds = end - start;
+
+    boost::mpi::environment env;
+    boost::mpi::communicator world;
+
+    std::vector<Task<OpenCV_Parameter>> tasks;
+    auto loadImagesFunction = loadImages;
+    auto toGrayColorFunction = toGrayColor;
+    auto toBlurFunction = toBlur;
+    auto saveImagesFunction = saveImages;
+    auto checkingExecutionFunction = checkingExecution;
+
+    int images_block_size = 100;
+    int blocks_count = num_images / images_block_size;
+
+    for (size_t i = 0; i < blocks_count; ++i)
+    {
+        std::vector<std::string> loadImagesParameters = { "input_dir", "images_block_size"};
+        Task<OpenCV_Parameter> loadImagesTask(loadImagesFunction, loadImagesParameters, i);
+        tasks.push_back(loadImagesTask);
+
+        std::vector<std::string> toGrayColorParameters = { "images_" + std::to_string(i)};
+        Task<OpenCV_Parameter> toGrayColorTask(toGrayColorFunction, toGrayColorParameters, i);
+        tasks.push_back(toGrayColorTask);
+
+        std::vector<std::string> toBlurParameters = { "gray_images_" + std::to_string(i)};
+        Task<OpenCV_Parameter> toBlurTask(toBlurFunction, toBlurParameters, i);
+        tasks.push_back(toBlurTask);
+
+        std::vector<std::string> saveImagesParameters = { "blur_images_" + std::to_string(i), "output_dir"};
+        Task<OpenCV_Parameter> saveImagesTask(saveImagesFunction, saveImagesParameters, i);
+        tasks.push_back(saveImagesTask);
+    }
+
+    std::vector<std::string> parametersForCheckingExecution(blocks_count);
+    for (size_t i = 0; i < blocks_count; ++i)
+    {
+        parametersForCheckingExecution[i] = "res_" + std::to_string(i);
+    }
+    Task<OpenCV_Parameter> checkingExecutionTask(checkingExecutionFunction, parametersForCheckingExecution, 0);
+    tasks.push_back(checkingExecutionTask);
+
+    std::vector<std::pair<std::string, OpenCV_Parameter>> parameters;
+
+    OpenCV_Parameter inputDirParameter(input_dir);
+    parameters.push_back(std::make_pair("input_dir", inputDirParameter));
+
+    output_dir = "output_images_taskManager/"; // директория для сохранения обработанных изображений
+    OpenCV_Parameter outputDirParameter(output_dir);
+    parameters.push_back(std::make_pair("output_dir", outputDirParameter));
+    OpenCV_Parameter imagesBlockSizeParameter(images_block_size);
+    parameters.push_back(std::make_pair("images_block_size", imagesBlockSizeParameter));
+
+    TaskManager<OpenCV_Parameter> taskManager(parameters, tasks);
+    start = omp_get_wtime();
+    taskManager.Run(world.rank());
+    end = omp_get_wtime();
+    if (world.rank() == 0)
+    {
+        OpenCV_Parameter resultTaskManager = std::move(taskManager.GetResult());
+        double taskManagerSeconds = end - start;
+
+        std::cout << "taskManagerSeconds: " << taskManagerSeconds <<
+            ' ' << "simpleSeconds: " << simpleSeconds <<
+            ' ' << "omp: " << ompSeconds;
+        std::cout << std::endl;
+    }
+#endif // OPENCV_TASK
+
+#ifdef MATRIX_MULT_VECTOR
     double start;
     double end;
 
     boost::mpi::environment env;
     boost::mpi::communicator world;
 
+    std::vector<Task<FloatParameter>> tasks;
+    auto lineMultVectorFunction = LineMultVector;
 
+    int processesCount = 8;
+    int lineSize = M / processesCount;
 
-        std::vector<Task<FloatParameter>> tasks;
-        auto lineMultVectorFunction = LineMultVector;
+    for (size_t i = 0; i < processesCount; ++i)
+    {
+        std::vector<std::string> lineMultVectorParameters = { "lineSize", "vector", std::to_string(i) };
+        Task<FloatParameter> lineMultVectorTask(lineMultVectorFunction, lineMultVectorParameters, i);
 
-        int processesCount = 8;
-        int lineSize = M / processesCount;
+        tasks.push_back(lineMultVectorTask);
+    }
 
-        for (size_t i = 0; i < processesCount; ++i)
+    auto collectLinesIntoVectorFunction = CollectLinesIntoVector;
+    std::vector<std::string> collectLinesIntoVectorParameters;
+    for (size_t i = 0; i < processesCount; ++i)
+    {
+        collectLinesIntoVectorParameters.push_back("res_" + std::to_string(i));
+    }
+    collectLinesIntoVectorParameters.push_back("size");
+    collectLinesIntoVectorParameters.push_back("lineSize");
+
+    Task<FloatParameter> collectValuesTask(collectLinesIntoVectorFunction, collectLinesIntoVectorParameters, 0);
+    tasks.push_back(collectValuesTask);
+
+    std::vector<std::pair<std::string, FloatParameter>> parameters;
+
+    std::vector<std::vector<float>> matrix;
+    for (size_t i = 0; i < M; ++i)
+    {
+        matrix.push_back(std::move(GetRandomVector(N)));
+    }
+
+    std::vector<float> vector = std::move(GetRandomVector(N));
+
+    start = omp_get_wtime();
+    std::vector<float> resultOMP = std::move(MatrixMultVectorOMP(matrix, vector));
+    end = omp_get_wtime();
+    double ompSeconds = end - start;
+    start = omp_get_wtime();
+    std::vector<float> resultSimple = std::move(MatrixMultVector(matrix, vector));
+    end = omp_get_wtime();
+    double simpleSeconds = end - start;
+
+    std::vector<std::vector<float>> line(lineSize);
+    for (size_t i = 0; i < processesCount; ++i)
+    {
+        for (size_t j = 0; j < lineSize; ++j)
         {
-            std::vector<std::string> lineMultVectorParameters = { "lineSize", "vector", std::to_string(i) };
-            Task<FloatParameter> lineMultVectorTask(lineMultVectorFunction, lineMultVectorParameters, i);
-
-            tasks.push_back(lineMultVectorTask);
+            line[j] = std::move(matrix[j + lineSize * i]);
         }
 
-        auto collectLinesIntoVectorFunction = CollectLinesIntoVector;
-        std::vector<std::string> collectLinesIntoVectorParameters;
-        for (size_t i = 0; i < processesCount; ++i)
-        {
-            collectLinesIntoVectorParameters.push_back("res_" + std::to_string(i));
-        }
-        collectLinesIntoVectorParameters.push_back("size");
-        collectLinesIntoVectorParameters.push_back("lineSize");
+        FloatParameter lineParameter(&line);
+        parameters.push_back(std::make_pair(std::to_string(i), lineParameter));
+    }
 
-        Task<FloatParameter> collectValuesTask(collectLinesIntoVectorFunction, collectLinesIntoVectorParameters, 0);
-        tasks.push_back(collectValuesTask);
+    FloatParameter vectorParameter(&vector);
+    parameters.push_back(std::make_pair("vector", vectorParameter));
+    FloatParameter sizeParameter(M);
+    parameters.push_back(std::make_pair("size", sizeParameter));
+    FloatParameter lineSizeParameter(lineSize);
+    parameters.push_back(std::make_pair("lineSize", lineSizeParameter));
 
-        std::vector<std::pair<std::string, FloatParameter>> parameters;
+    TaskManager<FloatParameter> taskManager(parameters, tasks);
 
-        std::vector<std::vector<float>> matrix;
-        for (size_t i = 0; i < M; ++i)
-        {
-            matrix.push_back(std::move(GetRandomVector(N)));
-        }
-
-        std::vector<float> vector = std::move(GetRandomVector(N));
-
-        start = omp_get_wtime();
-        std::vector<float> resultOMP = std::move(MatrixMultVectorOMP(matrix, vector));
+    start = omp_get_wtime();
+    taskManager.Run(world.rank());
+    if (world.rank() == 0)
+    {
+        FloatParameter resultTaskManager = std::move(taskManager.GetResult());
         end = omp_get_wtime();
-        double ompSeconds = end - start;
-        start = omp_get_wtime();
-        std::vector<float> resultSimple = std::move(MatrixMultVector(matrix, vector));
-        end = omp_get_wtime();
-        double simpleSeconds = end - start;
+        double taskManagerSeconds = end - start;
 
-        std::vector<std::vector<float>> line(lineSize);
-        for (size_t i = 0; i < processesCount; ++i)
-        {
-            for (size_t j = 0; j < lineSize; ++j)
-            {
-                line[j] = std::move(matrix[j + lineSize * i]);
-            }
+        if (world.size() == 1)
+            resultTaskManager = resultSimple;
 
-            FloatParameter lineParameter(&line);
-            parameters.push_back(std::make_pair(std::to_string(i), lineParameter));
-        }
-
-        FloatParameter vectorParameter(&vector);
-        parameters.push_back(std::make_pair("vector", vectorParameter));
-        FloatParameter sizeParameter(M);
-        parameters.push_back(std::make_pair("size", sizeParameter));
-        FloatParameter lineSizeParameter(lineSize);
-        parameters.push_back(std::make_pair("lineSize", lineSizeParameter));
-
-        TaskManager<FloatParameter> taskManager(parameters, tasks);
-
-        start = omp_get_wtime();
-        taskManager.Run(world.rank());
-        if (world.rank() == 0)
-        {
-            FloatParameter resultTaskManager = std::move(taskManager.GetResult());
-            end = omp_get_wtime();
-            double taskManagerSeconds = end - start;
-
-            if (world.size() == 1)
-                resultTaskManager = resultSimple;
-
-            std::cout << "taskManagerSeconds: " << taskManagerSeconds <<
-                ' ' << "simpleSeconds: " << simpleSeconds <<
-                ' ' << "omp: " << ompSeconds;
-            std::cout << std::endl;
-            std::cout << "Correct? : " << Test(resultSimple, resultTaskManager.GetFVectorData(), resultOMP);
-        }
+        std::cout << "taskManagerSeconds: " << taskManagerSeconds <<
+            ' ' << "simpleSeconds: " << simpleSeconds <<
+            ' ' << "omp: " << ompSeconds;
+        std::cout << std::endl;
+        std::cout << "Correct? : " << Test(resultSimple, resultTaskManager.GetFVectorData(), resultOMP);
+    }
+#endif // MATRIX_MULT_VECTOR
 
     return 0;
 }
