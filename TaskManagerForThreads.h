@@ -27,7 +27,7 @@ using namespace std::chrono_literals;
 
 //#define DEBUG_LOG
 
-#define COUNT_THREADS 1
+#define COUNT_THREADS 4
 
 template<typename Type>
 class TaskManagerForThreads
@@ -118,7 +118,7 @@ public:
 		for (auto parameter : parameters)
 		{
 			m_inputParameters.insert(parameter);
-			std::cout << "parameter name: " << parameter.first << std::endl;
+			//std::cout << "parameter name: " << parameter.first << std::endl;
 			m_newParameters.push_back(parameter);
 		}
 	}

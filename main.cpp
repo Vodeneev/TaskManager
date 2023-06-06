@@ -14,7 +14,7 @@
 #define OPENCV_TASK
 
 #define M 16000
-#define N 80000
+#define N 8000
 
 //#define DEBUG
 void ThreadSafeLog(const std::string& out)
@@ -206,6 +206,51 @@ void processing_image(std::string input_dir, std::string output_dir, int index)
     imwrite(output_filename, blurred_image);
 }
 
+void processing_image_2(std::string input_dir, std::string output_dir, int index)
+{
+    // формирование имени файла
+    std::string filename = input_dir + '(' + std::to_string(index) + ')' + ".jpg";
+
+    // загрузка изображения
+    cv::Mat image = cv::imread(filename, cv::IMREAD_COLOR);
+    if (image.empty())
+    {
+        std::cout << "Could not open or find the image: " << filename << std::endl;
+    }
+
+    // преобразование в оттенки серого
+    cv::Mat gray_image;
+    cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
+
+    // Применение фильтрации к изображению
+    cv::Mat edges;
+    cv::Canny(gray_image, edges, 50, 150, 3);
+
+    // Применение преобразования Хафа для поиска прямых
+    std::vector<cv::Vec2f> lines;
+    cv::HoughLines(edges, lines, 1, CV_PI / 180, 200);
+
+    // Отрисовка найденных прямых на изображении
+    for (size_t i = 0; i < lines.size(); i++)
+    {
+        float rho = lines[i][0], theta = lines[i][1];
+        cv::Point pt1, pt2;
+        double a = cos(theta), b = sin(theta);
+        double x0 = a * rho, y0 = b * rho;
+        pt1.x = cvRound(x0 + 1000 * (-b));
+        pt1.y = cvRound(y0 + 1000 * (a));
+        pt2.x = cvRound(x0 - 1000 * (-b));
+        pt2.y = cvRound(y0 - 1000 * (a));
+        cv::line(gray_image, pt1, pt2, cv::Scalar(0, 0, 255), 2);
+    }
+
+    // формирование имени файла для сохранения
+    std::string output_filename = output_dir + std::to_string(index) + ".jpg";
+
+    // сохранение обработанного изображения
+    imwrite(output_filename, gray_image);
+}
+
 std::map<std::string, OpenCV_Parameter> loadImages(
     const std::map<std::string, OpenCV_Parameter>& input_parameters,
     int32_t id)
@@ -229,6 +274,77 @@ std::map<std::string, OpenCV_Parameter> loadImages(
     std::map<std::string, OpenCV_Parameter> output_parameters;
     output_parameters.insert(std::make_pair("images_" + std::to_string(id), parameter));
     std::vector<cv::Mat> new_images3 = (output_parameters.at("images_" + std::to_string(id))).GetVectorMatData();
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> loadAndMakeGrayImages(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    int imagesBlockSize = (input_parameters.at("images_block_size")).GetIntData();
+
+    int startIndex = imagesBlockSize * id;
+
+    std::string input_dir = (input_parameters.at("input_dir")).GetStringData();
+    std::vector<cv::Mat> gray_images(imagesBlockSize);
+
+    int vectorIndex = 0;
+    for (int i = startIndex; i < startIndex + imagesBlockSize; ++i)
+    {
+        std::string filename = input_dir + '(' + std::to_string(i) + ')' + ".jpg";
+        cvtColor(cv::imread(filename, cv::IMREAD_COLOR), gray_images[vectorIndex], cv::COLOR_BGR2GRAY);
+        ++vectorIndex;
+    }
+
+    OpenCV_Parameter parameter(gray_images);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("gray_images_" + std::to_string(id), parameter));
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> drawLinesAndSaveImages(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    std::vector<cv::Mat> images = std::move((input_parameters.at("images_" + std::to_string(id))).GetVectorMatData());
+    int startIndex = images.size() * id;
+    std::string output_dir = (input_parameters.at("output_dir")).GetStringData();
+
+    cv::Mat edges;
+    std::vector<cv::Vec2f> lines;
+    cv::Mat gray_image;
+    for (size_t i = 0; i < images.size(); ++i)
+    {
+        if (images[i].empty())
+        {
+            std::cout << "image is empty" << std::endl;
+        }
+        cvtColor(images[i], gray_image, cv::COLOR_BGR2GRAY);
+        cv::Canny(gray_image, edges, 50, 150, 3);
+        cv::HoughLines(edges, lines, 1, CV_PI / 180, 200);
+        // Отрисовка найденных прямых на изображении
+        for (size_t i = 0; i < lines.size(); i++)
+        {
+            float rho = lines[i][0], theta = lines[i][1];
+            cv::Point pt1, pt2;
+            double a = cos(theta), b = sin(theta);
+            double x0 = a * rho, y0 = b * rho;
+            pt1.x = cvRound(x0 + 1000 * (-b));
+            pt1.y = cvRound(y0 + 1000 * (a));
+            pt2.x = cvRound(x0 - 1000 * (-b));
+            pt2.y = cvRound(y0 - 1000 * (a));
+            cv::line(gray_image, pt1, pt2, cv::Scalar(0, 0, 255), 2);
+        }
+        std::string filename = output_dir + std::to_string(startIndex) + ".jpg";
+        imwrite(filename, gray_image);
+        ++startIndex;
+    }
+
+    OpenCV_Parameter parameter(true);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("res_" + std::to_string(id), parameter));
+
+    
     return output_parameters;
 }
 
@@ -266,6 +382,32 @@ std::map<std::string, OpenCV_Parameter> toBlur(
 
     for (size_t i = 0; i < gray_images.size(); ++i)
     {
+        blur(gray_images[i], blur_images[i], cv::Size(6, 6));
+    }
+
+    OpenCV_Parameter parameter(blur_images);
+    std::map<std::string, OpenCV_Parameter> output_parameters;
+    output_parameters.insert(std::make_pair("blur_images_" + std::to_string(id), parameter));
+    return output_parameters;
+}
+
+std::map<std::string, OpenCV_Parameter> toGrayAndBlur(
+    const std::map<std::string, OpenCV_Parameter>& input_parameters,
+    int32_t id)
+{
+    std::vector<cv::Mat> images = std::move((input_parameters.at("images_" + std::to_string(id))).GetVectorMatData());
+
+    std::vector<cv::Mat> gray_images(images.size());
+    std::vector<cv::Mat> blur_images(gray_images.size());
+
+    for (size_t i = 0; i < images.size(); ++i)
+    {
+        if (images[i].empty())
+        {
+            std::cout << "toGrayColor image is empty. id: " << id << " index: " << std::endl;
+            break;
+        }
+        cvtColor(images[i], gray_images[i], cv::COLOR_BGR2GRAY);
         blur(gray_images[i], blur_images[i], cv::Size(6, 6));
     }
 
@@ -369,33 +511,12 @@ int main(int argc, char* argv[])
     std::string input_dir = "input_images/"; // директория с исходными изображениями
     std::string output_dir = "output_images/"; // директория для сохранения обработанных изображений
 
-    start = omp_get_wtime();
-    // загрузка и обработка изображений
-    for (int i = 1; i <= num_images; i++)
-    {
-        processing_image(input_dir, output_dir, i);
-    }
-    end = omp_get_wtime();
-    double simpleSeconds = end - start;
-
-    start = omp_get_wtime();
-    // загрузка и обработка изображений
-#pragma omp parallel for
-    for (int i = 1; i <= num_images; i++)
-    {
-        processing_image(input_dir, output_dir, i);
-    }
-    end = omp_get_wtime();
-    double ompSeconds = end - start;
-
     boost::mpi::environment env;
     boost::mpi::communicator world;
 
     std::vector<Task<OpenCV_Parameter>> tasks;
     auto loadImagesFunction = loadImages;
-    auto toGrayColorFunction = toGrayColor;
-    auto toBlurFunction = toBlur;
-    auto saveImagesFunction = saveImages;
+    auto drawLinesAndSaveImagesFunction = drawLinesAndSaveImages;
     auto checkingExecutionFunction = checkingExecution;
 
     int images_block_size = 100;
@@ -406,18 +527,13 @@ int main(int argc, char* argv[])
         std::vector<std::string> loadImagesParameters = { "input_dir", "images_block_size"};
         Task<OpenCV_Parameter> loadImagesTask(loadImagesFunction, loadImagesParameters, i);
         tasks.push_back(loadImagesTask);
+    }
 
-        std::vector<std::string> toGrayColorParameters = { "images_" + std::to_string(i)};
-        Task<OpenCV_Parameter> toGrayColorTask(toGrayColorFunction, toGrayColorParameters, i);
-        tasks.push_back(toGrayColorTask);
-
-        std::vector<std::string> toBlurParameters = { "gray_images_" + std::to_string(i)};
-        Task<OpenCV_Parameter> toBlurTask(toBlurFunction, toBlurParameters, i);
+    for (size_t i = 0; i < blocks_count; ++i)
+    {
+        std::vector<std::string> drawLinesAndSaveImagesParameters = { "images_" + std::to_string(i), "output_dir" };
+        Task<OpenCV_Parameter> toBlurTask(drawLinesAndSaveImagesFunction, drawLinesAndSaveImagesParameters, i);
         tasks.push_back(toBlurTask);
-
-        std::vector<std::string> saveImagesParameters = { "blur_images_" + std::to_string(i), "output_dir"};
-        Task<OpenCV_Parameter> saveImagesTask(saveImagesFunction, saveImagesParameters, i);
-        tasks.push_back(saveImagesTask);
     }
 
     std::vector<std::string> parametersForCheckingExecution(blocks_count);
@@ -447,6 +563,25 @@ int main(int argc, char* argv[])
     {
         OpenCV_Parameter resultTaskManager = std::move(taskManager.GetResult());
         double taskManagerSeconds = end - start;
+
+        start = omp_get_wtime();
+        // загрузка и обработка изображений
+        for (int i = 1; i <= num_images; i++)
+        {
+            processing_image_2(input_dir, output_dir, i);
+        }
+        end = omp_get_wtime();
+        double simpleSeconds = end - start;
+
+        start = omp_get_wtime();
+        // загрузка и обработка изображений
+#pragma omp parallel for
+        for (int i = 1; i <= num_images; i++)
+        {
+            processing_image_2(input_dir, output_dir, i);
+        }
+        end = omp_get_wtime();
+        double ompSeconds = end - start;
 
         std::cout << "taskManagerSeconds: " << taskManagerSeconds <<
             ' ' << "simpleSeconds: " << simpleSeconds <<
